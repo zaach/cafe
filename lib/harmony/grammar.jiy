@@ -1,0 +1,985 @@
+%start Program
+
+%nonassoc IF_WITHOUT_ELSE
+%nonassoc ELSE
+
+%%
+
+Literal
+    : NULLTOKEN
+      {{ $$ = yy.Node('LiteralExpr', {type: 'null', value: null}); }}
+    | TRUETOKEN
+      {{ $$ = yy.Node('LiteralExpr', {type: 'boolean', value: true}); }}
+    | FALSETOKEN
+      {{ $$ = yy.Node('LiteralExpr', {type: 'boolean', value: false}); }}
+    | NUMBER
+      {{ $$ = yy.Node('LiteralExpr', {type: 'number', value: Number($1)}); }}
+    | STRING
+      {{ $$ = yy.Node('LiteralExpr', {type: 'string', value: yy.escapeString(String($1))}); }}
+    | RegularExpressionLiteralBegin REGEXP_BODY
+      {{
+        var body = yytext.slice(1,yytext.lastIndexOf('/'));
+        var flags = yytext.slice(yytext.lastIndexOf('/')+1);
+        $$ = yy.Node('RegExpExpr', {body:body,flags:flags});
+        yy.inRegex = false;
+      }}
+    ;
+
+RegularExpressionLiteralBegin
+    : '/' 
+      { yy.inRegex = true; yy.lexer.unput($1); $$ = $1; }
+    | DIVEQUAL 
+      { yy.inRegex = true; yy.lexer.unput($1); $$ = $1; }
+    ;
+
+Property
+    : IDENT ':' AssignmentExpr
+      {{ $$ = yy.Node('DataProp', {name:String($1)}, $3); }}
+    | STRING ':' AssignmentExpr
+      {{ $$ = yy.Node('DataProp', {name:String($1)}, $3); }}
+    | NUMBER ':' AssignmentExpr
+      {{ $$ = yy.Node('DataProp', {name:Number($1)}, $3); }}
+    | IDENT IDENT '(' ')' OPENBRACE FunctionBody CLOSEBRACE
+      {{ if ($1 !== 'get' && $1 !== 'set') throw 'Parse error, invalid set/get.'; // TODO: use jison ABORT when supported
+      $$ = yy.Node('GetterSetterProp', {name:String($2), op:String($1)}, yy.Node('ParamDecl', {})).appendList($FunctionBody); }}
+    | IDENT IDENT '(' FormalParameterList ')' OPENBRACE FunctionBody CLOSEBRACE
+      {{ if ($1 !== 'get' && $1 !== 'set') throw 'Parse error, invalid set/get.'; // TODO: use jison ABORT when supported
+      $$ = yy.Node('GetterSetterProp', {name:String($2), op:String($1)}, yy.Node('ParamDecl', {}).appendList($FormalParameterList)).appendList($FunctionBody); }}
+    ;
+
+PropertyList
+    : Property
+      { $$ = [$1]; }
+    | PropertyList ',' Property
+      { $$ = $1; $$.push($3); }
+    ;
+
+PrimaryExpr
+    : PrimaryExprNoBrace
+    | OPENBRACE CLOSEBRACE
+      {{ $$ = yy.Node('ObjectExpr', {}); }}
+    | OPENBRACE PropertyList CLOSEBRACE
+      {{ $$ = yy.Node('ObjectExpr', {}).appendList($2); }}
+    | OPENBRACE PropertyList ',' CLOSEBRACE
+      {{ $$ = yy.Node('ObjectExpr', {}).appendList($2); }}
+    ;
+
+PrimaryExprNoBrace
+    : THISTOKEN
+      {{ $$ = yy.Node('ThisExpr', {}); }}
+    | Literal
+    | ArrayLiteral
+    | IDENT
+      {{ $$ = yy.Node('IdExpr', {name: String($1)}); }}
+    | '(' Expr ')'
+      { $$ = $Expr; $$.parens = true; }
+    ;
+
+ArrayLiteral
+    : '[' ']'
+      {{ $$ = yy.Node('ArrayExpr',{}); }}
+    | '[' Elision ']'
+      {{ $$ = yy.Node('ArrayExpr',{}).appendList($2); }}
+    | '[' ElementList ']'
+      {{ $$ = yy.Node('ArrayExpr',{}).appendList($2); }}
+    | '[' ElementList ',' ElisionOpt ']'
+      {{ $$ = yy.Node('ArrayExpr',{}).appendList($2).appendList($4);}}
+    ;
+
+ElementList
+    : AssignmentExpr
+      { $$ = [$1]; }
+    | Elision AssignmentExpr
+      { $$ = $1; $$.push($2); }
+    | ElementList ',' ElisionOpt AssignmentExpr
+      { $$ = $1.concat($3); $$.push($4); }
+    ;
+
+ElisionOpt
+    : 
+      { $$ = []; }
+    | Elision
+    ;
+
+Elision
+    : ','
+      { $$ = [yy.Node('Empty')]; }
+    | Elision ','
+      { $$ = $1; $$.push(yy.Node('Empty')); }
+    ;
+
+MemberExpr
+    : PrimaryExpr
+    | FunctionExpr
+    | MemberExpr '[' Expr ']'
+      {{ $$ = yy.Node('MemberExpr',{brackets:true},$1,$3); }}
+    | MemberExpr '.' IDENT
+      {{ $$ = yy.Node('MemberExpr',{brackets:false},$1,yy.Node('LiteralExpr', {type: 'string', value: String($3)})); }}
+    | NEW MemberExpr Arguments
+      {{ $$ = yy.Node('NewExpr',{},$MemberExpr).appendList($Arguments); }}
+    ;
+
+MemberExprNoBF
+    : PrimaryExprNoBrace
+    | MemberExprNoBF '[' Expr ']'
+      {{ $$ = yy.Node('MemberExpr',{brackets:true},$1,$3); }}
+    | MemberExprNoBF '.' IDENT
+      {{ $$ = yy.Node('MemberExpr',{brackets:false},$1,yy.Node('LiteralExpr', {type: 'string', value: String($3)})); }}
+    | NEW MemberExpr Arguments
+      {{ $$ = yy.Node('NewExpr',{},$MemberExpr).appendList($Arguments); }}
+    ;
+
+NewExpr
+    : MemberExpr
+    | NEW NewExpr
+      {{ $$ = yy.Node('NewExpr',{},$2); }}
+    ;
+
+NewExprNoBF
+    : MemberExprNoBF
+    | NEW NewExpr
+      {{ $$ = yy.Node('NewExpr',{},$2); }}
+    ;
+
+CallExpr
+    : MemberExpr Arguments
+      {{ 
+        $$ = $1.nodeType === 'MemberExpr' ?
+                yy.Node('InvokeExpr',{brackets:$1.brackets},$1.children[0],$1.children[1]).appendList($2):
+                yy.Node('CallExpr',{},$1).appendList($2);
+      }}
+    | CallExpr Arguments
+      {{ $$ = yy.Node('CallExpr',{},$1).appendList($2); }}
+    | CallExpr '[' Expr ']'
+      {{ $$ = yy.Node('MemberExpr',{brackets:true},$1,$3); }}
+    | CallExpr '.' IDENT
+      {{ $$ = yy.Node('MemberExpr',{brackets:false},$1,yy.Node('LiteralExpr', {type: 'string', value: String($3)})); }}
+    ;
+
+CallExprNoBF
+    : MemberExprNoBF Arguments
+      {{ 
+        $$ = $1.nodeType === 'MemberExpr' ?
+                yy.Node('InvokeExpr',{brackets:$1.brackets},$1.children[0],$1.children[1]).appendList($2):
+                yy.Node('CallExpr',{},$1).appendList($2);
+      }}
+    | CallExprNoBF Arguments
+      {{ $$ = yy.Node('CallExpr',{},$1).appendList($2); }}
+    | CallExprNoBF '[' Expr ']'
+      {{ $$ = yy.Node('MemberExpr',{brackets:true},$1,$3); }}
+    | CallExprNoBF '.' IDENT
+      {{ $$ = yy.Node('MemberExpr',{brackets:false},$1,yy.Node('LiteralExpr', {type: 'string', value: String($3)})); }}
+    ;
+
+Arguments
+    : '(' ')'
+      { $$ = []; }
+    | '(' ArgumentList ')'
+      { $$ = $ArgumentList; }
+    ;
+
+ArgumentList
+    : AssignmentExpr
+      { $$ = [$1]; }
+    | ArgumentList ',' AssignmentExpr
+      { $$ = $1; $$.push($3); }
+    ;
+
+LeftHandSideExpr
+    : NewExpr
+    | CallExpr
+    ;
+
+LeftHandSideExprNoBF
+    : NewExprNoBF
+    | CallExprNoBF
+    ;
+
+PostfixExpr
+    : LeftHandSideExpr
+    | LeftHandSideExpr PLUSPLUS
+      {{ $$ = yy.Node('CountExpr',{op: '++', isPrefix: false},$1); }}
+    | LeftHandSideExpr MINUSMINUS
+      {{ $$ = yy.Node('CountExpr',{op: '--', isPrefix: false},$1); }}
+    ;
+
+PostfixExprNoBF
+    : LeftHandSideExprNoBF
+    | LeftHandSideExprNoBF PLUSPLUS
+      {{ $$ = yy.Node('CountExpr',{op: '++', isPrefix: false},$1); }}
+    | LeftHandSideExprNoBF MINUSMINUS
+      {{ $$ = yy.Node('CountExpr',{op: '--', isPrefix: false},$1); }}
+    ;
+
+UnaryExprCommon
+    : DELETETOKEN UnaryExpr
+      {{ $$ = yy.Node('DeleteExpr',{},$2); }}
+    | VOIDTOKEN UnaryExpr
+      {{ $$ = yy.Node('VoidExpr',{},$2); }}
+    | TYPEOF UnaryExpr
+      {{ $$ = yy.Node('TypeofExpr',{},$2); }}
+    | PLUSPLUS UnaryExpr
+      {{ $$ = yy.Node('CountExpr',{op: '++', isPrefix: true},$2); }}
+    | MINUSMINUS UnaryExpr
+      {{ $$ = yy.Node('CountExpr',{op: '--', isPrefix: true},$2); }}
+    | '+' UnaryExpr
+      {{ $$ = yy.Node('UnaryPlusExpr',{},$2); }}
+    | '-' UnaryExpr
+      {{ $$ = yy.Node('NegateExpr',{},$2); }}
+    | '~' UnaryExpr
+      {{ $$ = yy.Node('BitwiseNotExpr',{},$2); }}
+    | '!' UnaryExpr
+      {{ $$ = yy.Node('LogicalNotExpr',{},$2); }}
+    ;
+
+UnaryExpr
+    : PostfixExpr
+    | UnaryExprCommon
+    ;
+
+UnaryExprNoBF
+    : PostfixExprNoBF
+    | UnaryExprCommon
+    ;
+
+MultiplicativeExpr
+    : UnaryExpr
+    | MultiplicativeExpr '*' UnaryExpr
+      {{ $$ = yy.Node('MultExpr', {}, $1, $3); }}
+    | MultiplicativeExpr '/' UnaryExpr
+      {{ $$ = yy.Node('DivExpr', {}, $1, $3); }}
+    | MultiplicativeExpr '%' UnaryExpr
+      {{ $$ = yy.Node('ModExpr', {}, $1, $3); }}
+    ;
+
+MultiplicativeExprNoBF
+    : UnaryExprNoBF
+    | MultiplicativeExprNoBF '*' UnaryExpr
+      {{ $$ = yy.Node('MultExpr', {}, $1, $3); }}
+    | MultiplicativeExprNoBF '/' UnaryExpr
+      {{ $$ = yy.Node('DivExpr', {}, $1, $3); }}
+    | MultiplicativeExprNoBF '%' UnaryExpr
+      {{ $$ = yy.Node('ModExpr', {}, $1, $3); }}
+    ;
+
+AdditiveExpr
+    : MultiplicativeExpr
+    | AdditiveExpr '+' MultiplicativeExpr
+      {{ $$ = yy.Node('AddExpr', {}, $1, $3); }}
+    | AdditiveExpr '-' MultiplicativeExpr
+      {{ $$ = yy.Node('SubExpr', {}, $1, $3); }}
+    ;
+
+AdditiveExprNoBF
+    : MultiplicativeExprNoBF
+    | AdditiveExprNoBF '+' MultiplicativeExpr
+      {{ $$ = yy.Node('AddExpr', {}, $1, $3); }}
+    | AdditiveExprNoBF '-' MultiplicativeExpr
+      {{ $$ = yy.Node('SubExpr', {}, $1, $3); }}
+    ;
+
+ShiftExpr
+    : AdditiveExpr
+    | ShiftExpr LSHIFT AdditiveExpr
+      {{ $$ = yy.Node('LeftShiftExpr', {}, $1, $3); }}
+    | ShiftExpr RSHIFT AdditiveExpr
+      {{ $$ = yy.Node('RightShiftExpr', {}, $1, $3); }}
+    | ShiftExpr URSHIFT AdditiveExpr
+      {{ $$ = yy.Node('URightShiftExpr', {}, $1, $3); }}
+    ;
+
+ShiftExprNoBF
+    : AdditiveExprNoBF
+    | ShiftExprNoBF LSHIFT AdditiveExpr
+      {{ $$ = yy.Node('LeftShiftExpr', {}, $1, $3); }}
+    | ShiftExprNoBF RSHIFT AdditiveExpr
+      {{ $$ = yy.Node('RightShiftExpr', {}, $1, $3); }}
+    | ShiftExprNoBF URSHIFT AdditiveExpr
+      {{ $$ = yy.Node('URightShiftExpr', {}, $1, $3); }}
+    ;
+
+RelationalExpr
+    : ShiftExpr
+    | RelationalExpr '<' ShiftExpr
+      {{ $$ = yy.Node('LessExpr', {}, $1, $3); }}
+    | RelationalExpr '>' ShiftExpr
+      {{ $$ = yy.Node('GreaterExpr', {}, $1, $3); }}
+    | RelationalExpr LE ShiftExpr
+      {{ $$ = yy.Node('LessEqExpr', {}, $1, $3); }}
+    | RelationalExpr GE ShiftExpr
+      {{ $$ = yy.Node('GreaterEqExpr', {}, $1, $3); }}
+    | RelationalExpr INSTANCEOF ShiftExpr
+      {{ $$ = yy.Node('InstanceofExpr', {}, $1, $3); }}
+    | RelationalExpr INTOKEN ShiftExpr
+      {{ $$ = yy.Node('InExpr', {}, $1, $3); }}
+    ;
+
+RelationalExprNoIn
+    : ShiftExpr
+    | RelationalExprNoIn '<' ShiftExpr
+      {{ $$ = yy.Node('LessExpr', {}, $1, $3); }}
+    | RelationalExprNoIn '>' ShiftExpr
+      {{ $$ = yy.Node('GreaterExpr', {}, $1, $3); }}
+    | RelationalExprNoIn LE ShiftExpr
+      {{ $$ = yy.Node('LessEqExpr', {}, $1, $3); }}
+    | RelationalExprNoIn GE ShiftExpr
+      {{ $$ = yy.Node('GreaterEqExpr', {}, $1, $3); }}
+    | RelationalExprNoIn INSTANCEOF ShiftExpr
+      {{ $$ = yy.Node('InstanceofExpr', {}, $1, $3); }}
+    ;
+
+RelationalExprNoBF
+    : ShiftExprNoBF
+    | RelationalExprNoBF '<' ShiftExpr
+      {{ $$ = yy.Node('LessExpr', {}, $1, $3); }}
+    | RelationalExprNoBF '>' ShiftExpr
+      {{ $$ = yy.Node('GreaterExpr', {}, $1, $3); }}
+    | RelationalExprNoBF LE ShiftExpr
+      {{ $$ = yy.Node('LessEqExpr', {}, $1, $3); }}
+    | RelationalExprNoBF GE ShiftExpr
+      {{ $$ = yy.Node('GreaterEqExpr', {}, $1, $3); }}
+    | RelationalExprNoBF INSTANCEOF ShiftExpr
+      {{ $$ = yy.Node('InstanceofExpr', {}, $1, $3); }}
+    | RelationalExprNoBF INTOKEN ShiftExpr
+      {{ $$ = yy.Node('InExpr', {}, $1, $3); }}
+    ;
+
+EqualityExpr
+    : RelationalExpr
+    | EqualityExpr EQEQ RelationalExpr
+      {{ $$ = yy.Node('EqualExpr', {}, $1, $3); }}
+    | EqualityExpr NE RelationalExpr
+      {{ $$ = yy.Node('NotEqualExpr', {}, $1, $3); }}
+    | EqualityExpr STREQ RelationalExpr
+      {{ $$ = yy.Node('StrictEqualExpr', {}, $1, $3); }}
+    | EqualityExpr STRNEQ RelationalExpr
+      {{ $$ = yy.Node('StrictNotEqualExpr', {}, $1, $3); }}
+    ;
+
+EqualityExprNoIn
+    : RelationalExprNoIn
+    | EqualityExprNoIn EQEQ RelationalExprNoIn
+      {{ $$ = yy.Node('EqualExpr', {}, $1, $3); }}
+    | EqualityExprNoIn NE RelationalExprNoIn
+      {{ $$ = yy.Node('NotEqualExpr', {}, $1, $3); }}
+    | EqualityExprNoIn STREQ RelationalExprNoIn
+      {{ $$ = yy.Node('StrictEqualExpr', {}, $1, $3); }}
+    | EqualityExprNoIn STRNEQ RelationalExprNoIn
+      {{ $$ = yy.Node('StrictNotEqualExpr', {}, $1, $3); }}
+    ;
+
+EqualityExprNoBF
+    : RelationalExprNoBF
+    | EqualityExprNoBF EQEQ RelationalExpr
+      {{ $$ = yy.Node('EqualExpr', {}, $1, $3); }}
+    | EqualityExprNoBF NE RelationalExpr
+      {{ $$ = yy.Node('NotEqualExpr', {}, $1, $3); }}
+    | EqualityExprNoBF STREQ RelationalExpr
+      {{ $$ = yy.Node('StrictEqualExpr', {}, $1, $3); }}
+    | EqualityExprNoBF STRNEQ RelationalExpr
+      {{ $$ = yy.Node('StrictNotEqualExpr', {}, $1, $3); }}
+    ;
+
+BitwiseANDExpr
+    : EqualityExpr
+    | BitwiseANDExpr '&' EqualityExpr
+      {{ $$ = yy.Node('BitwiseANDExpr', {}, $1, $3); }}
+    ;
+
+BitwiseANDExprNoIn
+    : EqualityExprNoIn
+    | BitwiseANDExprNoIn '&' EqualityExprNoIn
+      {{ $$ = yy.Node('BitwiseANDExpr', {}, $1, $3); }}
+    ;
+
+BitwiseANDExprNoBF
+    : EqualityExprNoBF
+    | BitwiseANDExprNoBF '&' EqualityExpr
+      {{ $$ = yy.Node('BitwiseANDExpr', {}, $1, $3); }}
+    ;
+
+BitwiseXORExpr
+    : BitwiseANDExpr
+    | BitwiseXORExpr '^' BitwiseANDExpr
+      {{ $$ = yy.Node('BitwiseXORExpr', {}, $1, $3); }}
+    ;
+
+BitwiseXORExprNoIn
+    : BitwiseANDExprNoIn
+    | BitwiseXORExprNoIn '^' BitwiseANDExprNoIn
+      {{ $$ = yy.Node('BitwiseXORExpr', {}, $1, $3); }}
+    ;
+
+BitwiseXORExprNoBF
+    : BitwiseANDExprNoBF
+    | BitwiseXORExprNoBF '^' BitwiseANDExpr
+      {{ $$ = yy.Node('BitwiseXORExpr', {}, $1, $3); }}
+    ;
+
+BitwiseORExpr
+    : BitwiseXORExpr
+    | BitwiseORExpr '|' BitwiseXORExpr
+      {{ $$ = yy.Node('BitwiseORExpr', {}, $1, $3); }}
+    ;
+
+BitwiseORExprNoIn
+    : BitwiseXORExprNoIn
+    | BitwiseORExprNoIn '|' BitwiseXORExprNoIn
+      {{ $$ = yy.Node('BitwiseORExpr', {}, $1, $3); }}
+    ;
+
+BitwiseORExprNoBF
+    : BitwiseXORExprNoBF
+    | BitwiseORExprNoBF '|' BitwiseXORExpr
+      {{ $$ = yy.Node('BitwiseORExpr', {}, $1, $3); }}
+    ;
+
+LogicalANDExpr
+    : BitwiseORExpr
+    | LogicalANDExpr AND BitwiseORExpr
+      {{ $$ = yy.Node('LogicalANDExpr', {}, $1, $3); }}
+    ;
+
+LogicalANDExprNoIn
+    : BitwiseORExprNoIn
+    | LogicalANDExprNoIn AND BitwiseORExprNoIn
+      {{ $$ = yy.Node('LogicalANDExpr', {}, $1, $3); }}
+    ;
+
+LogicalANDExprNoBF
+    : BitwiseORExprNoBF
+    | LogicalANDExprNoBF AND BitwiseORExpr
+      {{ $$ = yy.Node('LogicalANDExpr', {}, $1, $3); }}
+    ;
+
+LogicalORExpr
+    : LogicalANDExpr
+    | LogicalORExpr OR LogicalANDExpr
+      {{ $$ = yy.Node('LogicalORExpr', {}, $1, $3); }}
+    ;
+
+LogicalORExprNoIn
+    : LogicalANDExprNoIn
+    | LogicalORExprNoIn OR LogicalANDExprNoIn
+      {{ $$ = yy.Node('LogicalORExpr', {}, $1, $3); }}
+    ;
+
+LogicalORExprNoBF
+    : LogicalANDExprNoBF
+    | LogicalORExprNoBF OR LogicalANDExpr
+      {{ $$ = yy.Node('LogicalORExpr', {}, $1, $3); }}
+    ;
+
+ConditionalExpr
+    : LogicalORExpr
+    | LogicalORExpr '?' AssignmentExpr ':' AssignmentExpr
+      {{ $$ = yy.Node('ConditionalExpr', {}, $1, $3, $5); }}
+    ;
+
+ConditionalExprNoIn
+    : LogicalORExprNoIn
+    | LogicalORExprNoIn '?' AssignmentExprNoIn ':' AssignmentExprNoIn
+      {{ $$ = yy.Node('ConditionalExpr', {}, $1, $3, $5); }}
+    ;
+
+ConditionalExprNoBF
+    : LogicalORExprNoBF
+    | LogicalORExprNoBF '?' AssignmentExpr ':' AssignmentExpr
+      {{ $$ = yy.Node('ConditionalExpr', {}, $1, $3, $5); }}
+    ;
+
+AssignmentExpr
+    : ConditionalExpr
+    | LeftHandSideExpr AssignmentOperator AssignmentExpr
+      {{ $$ = yy.Node('AssignExpr', {op: $2}, $1, $3); }}
+    ;
+
+AssignmentExprNoIn
+    : ConditionalExprNoIn
+    | LeftHandSideExpr AssignmentOperator AssignmentExprNoIn
+      {{ $$ = yy.Node('AssignExpr', {op: $2}, $1, $3); }}
+    ;
+
+AssignmentExprNoBF
+    : ConditionalExprNoBF
+    | LeftHandSideExprNoBF AssignmentOperator AssignmentExpr
+      {{ $$ = yy.Node('AssignExpr', {op: $2}, $1, $3); }}
+    ;
+
+AssignmentOperator
+    : '='
+    | PLUSEQUAL
+    | MINUSEQUAL
+    | MULTEQUAL
+    | DIVEQUAL
+    | LSHIFTEQUAL
+    | RSHIFTEQUAL
+    | URSHIFTEQUAL
+    | ANDEQUAL
+    | XOREQUAL
+    | OREQUAL
+    | MODEQUAL
+    ;
+
+Expr
+    : AssignmentExpr
+    | Expr ',' AssignmentExpr
+      {{ $$ = yy.Node('BinaryExpr', {op: ','}, $1, $3); }}
+    ;
+
+ExprNoIn
+    : AssignmentExprNoIn
+    | ExprNoIn ',' AssignmentExprNoIn
+      {{ $$ = yy.Node('BinaryExpr', {op: ','}, $1, $3); }}
+    ;
+
+ExprNoBF
+    : AssignmentExprNoBF
+    | ExprNoBF ',' AssignmentExpr
+      {{ $$ = yy.Node('BinaryExpr', {op: ','}, $1, $3); }}
+    ;
+
+Statement
+    : Block
+    | VariableStatement
+    | ConstStatement
+    | FunctionDeclaration
+    | EmptyStatement
+    | ExprStatement
+    | IfStatement
+    | IterationStatement
+    | ContinueStatement
+    | BreakStatement
+    | ReturnStatement
+    | WithStatement
+    | SwitchStatement
+    | LabelledStatement
+    | ThrowStatement
+    | TryStatement
+    | DebuggerStatement
+    ;
+
+Block
+    : OPENBRACE CLOSEBRACE
+      {{ $$ = yy.Node('BlockStmt',{}); }}
+    | OPENBRACE SourceElements CLOSEBRACE
+      {{ $$ = yy.Node('BlockStmt',{}).appendList($2.children); }}
+    ;
+
+VariableStatement
+    : VAR VariableDeclarationList ';'
+      { $$ = $2; }
+    | VAR VariableDeclarationList error
+      { $$ = $2; }
+    ;
+
+VariableDeclarationList
+    : IDENT
+      {{ $$ = yy.Node('VarDecl',{},
+                  yy.IdPatt($1)); }}
+    | IDENT Initializer
+      {{ $$ = yy.Node('VarDecl',{},
+                  yy.Node('InitPatt', {}, yy.IdPatt($1), $2)); }}
+    | VariableDeclarationList ',' IDENT
+      {{ $$ = $1.append(yy.IdPatt($3)); }}
+    | VariableDeclarationList ',' IDENT Initializer
+      {{ $$ = $1.append(yy.Node('InitPatt', {}, yy.IdPatt($3), $4)); }}
+    ;
+
+VariableDeclarationListNoIn
+    : IDENT
+      {{ $$ = yy.Node('VarDecl',{},
+                  yy.IdPatt($1)); }}
+    | IDENT InitializerNoIn
+      {{ $$ = yy.Node('VarDecl',{},
+                  yy.Node('InitPatt', {}, yy.IdPatt($1), $2)); }}
+    | VariableDeclarationListNoIn ',' IDENT
+      {{ $$ = $1.append(yy.IdPatt($3)); }}
+    | VariableDeclarationListNoIn ',' IDENT InitializerNoIn
+      {{ $$ = $1.append(yy.Node('InitPatt', {}, yy.IdPatt($3), $4)); }}
+    ;
+
+ConstStatement
+    : CONSTTOKEN ConstDeclarationList ';'
+      { $$ = $2; }
+    | CONSTTOKEN ConstDeclarationList error
+      { $$ = $2; }
+    ;
+
+ConstDeclarationList
+    : ConstDeclaration
+      {{ $$ = yy.Node('ConstDecl',{},$1); }}
+    | ConstDeclarationList ',' ConstDeclaration
+      {{ $$ = $1.append($3); }}
+    ;
+
+ConstDeclaration
+    : IDENT
+      {{ $$ = yy.IdPatt($1); }}
+    | IDENT Initializer
+      {{ $$ = yy.Node('InitPatt', {}, yy.IdPatt($1), $2); }}
+    ;
+
+Initializer
+    : '=' AssignmentExpr
+      { $$ = $2; }
+    ;
+
+InitializerNoIn
+    : '=' AssignmentExprNoIn
+      { $$ = $2; }
+    ;
+
+EmptyStatement
+    : ';'
+      {{ $$ = yy.Node('EmptyStmt', {}); }}
+    ;
+
+ExprStatement
+    : ExprNoBF ';'
+    | ExprNoBF error
+    ;
+
+IfStatement
+    : IF '(' Expr ')' Statement %prec IF_WITHOUT_ELSE
+      {{ $$ = yy.Node('IfStmt', {}, $Expr, $Statement, yy.Node('EmptyStmt',{})); }}
+    | IF '(' Expr ')' Statement ELSE Statement
+      {{ $$ = yy.Node('IfStmt', {}, $Expr, $Statement1, $Statement2); }}
+    ;
+
+IterationStatement
+    : DO Statement WHILE '(' Expr ')' ';'
+      {{ $$ = yy.Node('DoWhileStmt', {}, $Statement, $Expr); }}
+    | DO Statement WHILE '(' Expr ')' error
+      {{ $$ = yy.Node('DoWhileStmt', {}, $Statement, $Expr); }}
+    | WHILE '(' Expr ')' Statement
+      {{ $$ = yy.Node('WhileStmt', {}, $Expr, $Statement); }}
+    | FOR '(' ExprNoInOpt ';' ExprOpt ';' ExprOpt ')' Statement
+      {{ $$ = yy.Node('ForStmt', {}, $ExprNoInOpt, $ExprOpt1, $ExprOpt2, $Statement); }}
+    | FOR '(' VAR VariableDeclarationListNoIn ';' ExprOpt ';' ExprOpt ')' Statement
+      {{ $$ = yy.Node('ForStmt', {}, $VariableDeclarationListNoIn, $ExprOpt1, $ExprOpt2, $Statement); }}
+    | FOR '(' LeftHandSideExpr INTOKEN Expr ')' Statement
+      {{ $$ = yy.Node('ForInStmt', {}, $LeftHandSideExpr, $Expr, $Statement); }}
+    | FOR '(' VAR IDENT INTOKEN Expr ')' Statement
+      {{ $$ = yy.Node('ForInStmt', {},
+                  yy.Node('VarDecl',{}, yy.IdPatt($4)),
+                  $Expr, $Statement); }}
+    | FOR '(' VAR IDENT InitializerNoIn INTOKEN Expr ')' Statement
+      {{ $$ = yy.Node('ForInStmt', {},
+                  yy.Node('VarDecl',{},
+                    yy.Node('InitPatt', {}, yy.IdPatt($4), $5)),
+                  $Expr, $Statement); }}
+    ;
+
+ExprOpt
+    : 
+      {{ $$ = yy.Node('Empty'); }}
+    | Expr
+    ;
+
+ExprNoInOpt
+    : 
+      {{ $$ = yy.Node('Empty'); }}
+    | ExprNoIn
+    ;
+
+ContinueStatement
+    : CONTINUE ';'
+      {{ $$ = yy.Node('ContinueStmt',{}); }}
+    | CONTINUE error
+      {{ $$ = yy.Node('ContinueStmt',{}); }}
+    | CONTINUE IDENT ';'
+      {{ $$ = yy.Node('ContinueStmt',{label:$2}); }}
+    | CONTINUE IDENT error
+      {{ $$ = yy.Node('ContinueStmt',{label:$2}); }}
+    ;
+
+BreakStatement
+    : BREAK ';'
+      {{ $$ = yy.Node('BreakStmt',{}); }}
+    | BREAK error
+      {{ $$ = yy.Node('BreakStmt',{}); }}
+    | BREAK IDENT ';'
+      {{ $$ = yy.Node('BreakStmt',{label:$2}); }}
+    | BREAK IDENT error
+      {{ $$ = yy.Node('BreakStmt',{label:$2}); }}
+    ;
+
+ReturnStatement
+    : RETURN ';'
+      {{ $$ = yy.Node('ReturnStmt',{}); }}
+    | RETURN error
+      {{ $$ = yy.Node('ReturnStmt',{}); }}
+    | RETURN Expr ';'
+      {{ $$ = yy.Node('ReturnStmt',{},$2); }}
+    | RETURN Expr error
+      {{ $$ = yy.Node('ReturnStmt',{},$2); }}
+    ;
+
+WithStatement
+    : WITH '(' Expr ')' Statement
+      {{ $$ = yy.Node('WithStmt',{},$Expr,$Statement); }}
+    ;
+
+SwitchStatement
+    : SWITCH '(' Expr ')' CaseBlock
+      {{ $$ = yy.Node('SwitchStmt',{},$Expr).appendList($CaseBlock); }}
+    ;
+
+CaseBlock
+    : OPENBRACE CaseClausesOpt CLOSEBRACE
+      { $$ = $2; }
+    | OPENBRACE CaseClausesOpt DefaultClause CaseClausesOpt CLOSEBRACE
+      { $2.push($DefaultClause); $$ = $2.concat($CaseClausesOpt2); }
+    ;
+
+CaseClausesOpt
+    : 
+      { $$ = []; }
+    | CaseClauses
+    ;
+
+CaseClauses
+    : CaseClause
+      { $$ = [$1]; }
+    | CaseClauses CaseClause
+      { $1.push($2); $$ = $1; }
+    ;
+
+CaseClause
+    : CASE Expr ':'
+      {{ $$ = yy.Node('Case',{},$Expr); }}
+    | CASE Expr ':' SourceElements
+      {{ $$ = yy.Node('Case',{},$Expr).appendList($4.children); }}
+    ;
+
+DefaultClause
+    : DEFAULT ':'
+      {{ $$ = yy.Node('DefaultCase',{}); }}
+    | DEFAULT ':' SourceElements
+      {{ $$ = yy.Node('DefaultCase',{}).appendList($3.children); }}
+    ;
+
+LabelledStatement
+    : IDENT ':' Statement
+      {{ $$ = yy.Node('LabelledStmt',{label: $1},$3); }}
+    ;
+
+ThrowStatement
+    : THROW Expr ';'
+      {{ $$ = yy.Node('ThrowStmt', {}, $Expr); }}
+    | THROW Expr error
+      {{ $$ = yy.Node('ThrowStmt', {}, $Expr); }}
+    ;
+
+TryStatement
+    : TRY Block FINALLY Block
+      {{ $$ = yy.Node('TryStmt', {}, $Block1, yy.Node('Empty'), $Block2); }}
+    | TRY Block CATCH '(' IDENT ')' Block
+      {{ $$ = yy.Node('TryStmt', {}, $Block1,
+                yy.Node('CatchClause',{}, yy.IdPatt($5), $Block2)); }}
+    | TRY Block CATCH '(' IDENT ')' Block FINALLY Block
+      {{ $$ = yy.Node('TryStmt', {}, $Block1,
+                yy.Node('CatchClause',{}, yy.IdPatt($5), $Block2),
+                $Block3); }}
+    ;
+
+DebuggerStatement
+    : DEBUGGER ';'
+      {{ $$ = yy.Node('DebuggerStmt', {}); }}
+    | DEBUGGER error
+      {{ $$ = yy.Node('DebuggerStmt', {}); }}
+    ;
+
+FunctionDeclaration
+    : FUNCTION IDENT '(' ')' OPENBRACE FunctionBody CLOSEBRACE
+      {{ $$ = yy.Node('FunctionDecl', {},
+                yy.IdPatt($2),
+                yy.Node('ParamDecl', {})).appendList($FunctionBody);
+      }}
+    | FUNCTION IDENT '(' FormalParameterList ')' OPENBRACE FunctionBody CLOSEBRACE
+      {{ $$ = yy.Node('FunctionDecl', {},
+                yy.IdPatt($2),
+                yy.Node('ParamDecl', {}).appendList($FormalParameterList)).appendList($FunctionBody); }}
+      }}
+    ;
+
+FunctionExpr
+    : FUNCTION '(' ')' OPENBRACE FunctionBody CLOSEBRACE
+      {{ $$ = yy.Node('FunctionExpr', {}, yy.Node('Empty'), yy.Node('ParamDecl', {})).appendList($FunctionBody); }}
+    | FUNCTION '(' FormalParameterList ')' OPENBRACE FunctionBody CLOSEBRACE
+      {{ $$ = yy.Node('FunctionExpr', {}, yy.Node('Empty'), yy.Node('ParamDecl', {}).appendList($FormalParameterList)).appendList($FunctionBody); }}
+    | FUNCTION IDENT '(' ')' OPENBRACE FunctionBody CLOSEBRACE
+      {{ $$ = yy.Node('FunctionExpr', {},
+                yy.IdPatt($2),
+                yy.Node('ParamDecl', {})).appendList($FunctionBody); }}
+    | FUNCTION IDENT '(' FormalParameterList ')' OPENBRACE FunctionBody CLOSEBRACE
+      {{ $$ = yy.Node('FunctionExpr', {},
+                yy.IdPatt($2),
+                yy.Node('ParamDecl', {}).appendList($FormalParameterList)).appendList($FunctionBody); }}
+    ;
+
+FormalParameterList
+    : IDENT
+      %{ $$ = [yy.IdPatt($1)]; %}
+    | FormalParameterList ',' IDENT
+      %{ $$ = $1; $$.push(yy.IdPatt($3)); %}
+    ;
+
+FunctionBody
+    : 
+      { $$ = []; }
+    | SourceElements
+      { $$ = $1.children; }
+    ;
+
+Program
+    :
+      {{ return yy.Node('Program',{}); }}
+    | ScriptElements
+      { return $1; }
+    ;
+
+SourceElements
+    : Statement
+      {{ $$ = yy.Node('Program',{},$1); }}
+    | SourceElements Statement
+      { $$ = $1.append($2); }
+    ;
+
+/* Harmony Additions */
+
+ScriptElement
+    : Statement
+    | ImportDeclaration
+    | ModuleDeclaration
+    ;
+
+ScriptElements
+    : ScriptElement
+      {{ $$ = yy.Node('Program',{},$1); }}
+    | ScriptElements ScriptElement
+      { $$ = $1.append($2); }
+    ;
+
+Identifier
+    : IDENT
+    ;
+
+ExportDeclaration
+    : EXPORT VariableStatement
+      {{ $$ = yy.Node('ExportDecl',{},$2); }}
+    | EXPORT FunctionDeclaration
+      {{ $$ = yy.Node('ExportDecl',{},$2); }}
+    ;
+
+ImportDeclaration
+    : IMPORT ModuleSpecifier '.' '*' ';'
+      {{ $$ = yy.Node('ImportWildcardDecl',{},$2); }}
+    | IMPORT ModuleSpecifier '.' ImportSpecifier ';'
+      {{ $$ = yy.Node('ImportDecl',{},$2,$4); }}
+    ;
+
+ModuleSpecifier
+    : Identifier
+      {{ $$ = yy.Node('ModuleSpecifier',{},yy.IdPatt($1)); }}
+    | ModuleSpecifier '.' Identifier
+      { $$ = $1; $$.append(yy.IdPatt($3)); }
+    ;
+
+ImportSpecifier
+    : OPENBRACE CLOSEBRACE
+      {{ $$ = yy.Node('ImportSpecifier',{}); }}
+    | OPENBRACE ImportSpecifierList CLOSEBRACE
+      {{ $$ = yy.Node('ImportSpecifier',{}).appendList($2); }}
+    ;
+
+ImportSpecifierItem
+    : Identifier
+      {{ $$ = yy.Node('ImportSpecifierItem',{name:$1}); }}
+    | Identifier ':' Identifier
+      {{ $$ = yy.Node('ImportSpecifierItem',{name:$1,alias:$3}); }}
+    ;
+
+ImportSpecifierList
+    : ImportSpecifierItem
+      { $$ = [$1]; }
+    | ImportSpecifierList ',' ImportSpecifierItem
+      { $$ = $1; $$.push($3); }
+    ;
+
+ModuleDeclaration
+/*    : MODULE Identifier '=' 'load' MRLList ';' */
+    : MODULE Identifier '=' ModuleSpecifier ';'
+      {{ $$ = yy.Node('ModuleAssignDecl',{},yy.IdPatt($2), $4); }}
+    | MODULE Identifier OPENBRACE ModuleElementList CLOSEBRACE 
+      {{ $$ = yy.Node('ModuleDecl',{},yy.IdPatt($2)).appendList($4); }}
+    ;
+
+MRLList
+    : MRL
+      { $$ = [$1]; }
+    | MRLList ',' MRL
+      { $$ = $1; $$.push($3); }
+    ;
+
+MRL
+    : STRING
+    | '(' MRL ')'
+      { $$ = $2; }
+    | MRL '||' MRL
+      {{ $$ = yy.Node('LogicalORExpr', {}, $1, $3); }}
+    ;
+
+ModuleElementList
+    : 
+      { $$ = []; }
+    | ModuleElementList ModuleElement
+      { $$ = $1; $$.push($2); }
+    ;
+
+ModuleElement
+    : Statement
+    | ImportDeclaration
+    | ExportDeclaration
+    | ModuleDeclaration
+    ;
+
+/*
+ExportDeclaration ::= 'export' VariableStatement
+                   |  'export' FunctionDeclaration
+
+ImportDeclaration ::= 'import' ModuleSpecifier '.' '*' ';'
+                   |  'import' ModuleSpecifier '.' ImportSpecifier ';'
+
+ModuleSpecifier ::= Identifier
+                  | ModuleSpecifier '.' Identifier
+
+ImportSpecifier ::= '{' ImportSpecifierItem*(',') '}'
+
+ImportSpecifierItem ::= Identifier (':' Identifier)?
+
+
+ModuleDeclaration ::= 'module' Identifier '=' 'load' MRL+(',') ';'
+                   |  'module' Identifier '=' ModuleSpecifier ';'
+                   |  'module' Identifier '{' ModuleElement* '}'
+
+MRL ::= StringLiteral
+     |  '(' MRL ')'
+     |  MRL '||' MRL
+
+ModuleElement ::= Statement
+               |  FunctionDeclaration
+               |  ImportDeclaration
+               |  ExportDeclaration
+               |  ModuleDeclaration
+
+Script ::= ScriptElement*
+
+ScriptElement ::= Statement
+               |  FunctionDeclaration
+               |  ImportDeclaration
+               |  ModuleDeclaration
+
+*/
+
