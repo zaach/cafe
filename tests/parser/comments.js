@@ -13,6 +13,14 @@ exports["test single line comment"] = function () {
     assert.deepEqual(program, nodes);
 };
 
+exports["test hash comment"] = function () {
+    var source = '#hey\na',
+        program = parse(source),
+        nodes = Node('Program',{},
+                    Node('IdExpr',{name: 'a'}));
+    assert.deepEqual(program, nodes);
+};
+
 exports["test multiline comment"] = function () {
     var source = '/* \nhey\n */\na/* */',
         program = parse(source),

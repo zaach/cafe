@@ -36,6 +36,14 @@ exports["test number literal"] = function () {
     assert.deepEqual(program, nodes);
 };
 
+exports["test number hex literal"] = function () {
+    var source = '0xff;',
+        program = parse(source),
+        nodes = Node('Program',{},
+                    Node('LiteralExpr',{type:'number',value:255}));
+    assert.deepEqual(program, nodes);
+};
+
 exports["test string literal"] = function () {
     var source = '"hello";',
         program = parse(source),

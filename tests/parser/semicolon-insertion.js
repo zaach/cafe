@@ -109,3 +109,25 @@ exports["test block"] = function () {
                     Node('LiteralExpr',{type:'boolean',value:true})));
     assert.deepEqual(program, nodes);
 };
+
+exports["test return unneeded ASI with space"] = function () {
+    var source = 'return {\nfoo:5}',
+        program = parse(source),
+        nodes = Node('Program',{},
+                  Node('ReturnStmt',{},
+                    Node('ObjectExpr',{},
+                    Node('DataProp',{name:'foo'},
+                      Node('LiteralExpr',{type:'number',value:5})))));
+    assert.deepEqual(program, nodes);
+};
+
+exports["test return unneeded ASI with comment"] = function () {
+    var source = 'return/* */{\nfoo:5}',
+        program = parse(source),
+        nodes = Node('Program',{},
+                  Node('ReturnStmt',{},
+                    Node('ObjectExpr',{},
+                    Node('DataProp',{name:'foo'},
+                      Node('LiteralExpr',{type:'number',value:5})))));
+    assert.deepEqual(program, nodes);
+};
