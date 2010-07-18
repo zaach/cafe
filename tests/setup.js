@@ -1,13 +1,12 @@
+var C;
 if (typeof objj !== 'undefined') { //hacky
-exports.parser = require("../lib/objj").parser;
-exports.parse = require("../lib/objj").parse;
-exports.toJS = require("../lib/objj").toJS;
+    C = require("../lib/objj").Compiler;
 } else if (typeof harmony !== 'undefined') {
-exports.parser = require("../lib/harmony").parser;
-exports.parse = require("../lib/harmony").parse;
-exports.toJS = require("../lib/harmony").toJS;
+    C = require("../lib/harmony").Compiler;
 } else {
-exports.parser = require("../lib/js").parser;
-exports.parse = require("../lib/js").parse;
-exports.toJS = require("../lib/js").toJS;
+    C = require("../lib/js").Compiler;
 }
+var compiler = new C;
+exports.parser = compiler.parser;
+exports.parse = function (s) {return exports.parser.parse(s);};
+exports.toJS = compiler.toJS;
