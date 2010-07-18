@@ -1,0 +1,23 @@
+{
+  "name": "cafe",
+  "version": "0.1.0",
+  "author": "Zach Carter",
+  "email": "zach@carter.name",
+  "keywords": [
+      "cafe",
+      "javascript",
+      "ecmascript",
+      "objective-j",
+      "harmony",
+      "language",
+      "parser",
+      "compiler"
+  ],
+  "githubName": "cafe",
+  "type": "zip",
+  "location": "http://github.com/zaach/cafe/zipball/master",
+  "main" : "lib/cafe",
+  "bin" : { "cafe" : "lib/util/cli-wrapper.js" },
+  "engines" : { "node" : ">=0.1.90" },
+  "directories" : { "lib" : "lib" }
+}
