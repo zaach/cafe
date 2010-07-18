@@ -70,6 +70,34 @@ exports["test class implementation with class method"] = function () {
     assert.deepEqual(program, nodes);
 };
 
+exports["test class implementation with void type method"] = function () {
+    var source = '@implementation Person : CPObject { } +(void)foo { return true;} @end',
+        program = parse(source),
+        nodes = Node('Program',{},
+                  Node('CPClassImplementationStmt',{name:'Person'},
+                    IdPatt('CPObject'),
+                    Node('CPInstanceVars',{}),
+                    Node('CPClassMethodDecl',{type: 'void'},
+                      IdPatt('foo'),
+                      Node('ReturnStmt',{},
+                        Node('LiteralExpr',{type: 'boolean', value: true})))));
+    assert.deepEqual(program, nodes);
+};
+
+exports["test class implementation with unsigned int type method"] = function () {
+    var source = '@implementation Person : CPObject { } +(unsigned int)foo { return true;} @end',
+        program = parse(source),
+        nodes = Node('Program',{},
+                  Node('CPClassImplementationStmt',{name:'Person'},
+                    IdPatt('CPObject'),
+                    Node('CPInstanceVars',{}),
+                    Node('CPClassMethodDecl',{type: 'unsigned int'},
+                      IdPatt('foo'),
+                      Node('ReturnStmt',{},
+                        Node('LiteralExpr',{type: 'boolean', value: true})))));
+    assert.deepEqual(program, nodes);
+};
+
 exports["test class implementation with class and instance method"] = function () {
     var source = '@implementation Person : CPObject { } +(CPString)foo { return true;} -(id)bar{ return false;} @end',
         program = parse(source),

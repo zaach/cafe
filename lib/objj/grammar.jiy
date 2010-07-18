@@ -856,6 +856,7 @@ Literal
 
 PrimaryExprNoBrace
     : CPMessageSendExpr
+    | CPSelectorExpr
     ;
 
 CPMessageSendExpr
@@ -955,10 +956,21 @@ CPMethodDecl
     ;
 
 CPMethodType
-    : '(' IDENT ')'
+    : '(' CPType ')'
       {{ $$ = $2; }}
     |
       {{ $$ = ''; }}
+    ;
+
+CPType
+    : CPSingleType
+    | IDENT CPSingleType
+      {{ $$ = $1+' '+$2; }}
+    ;
+
+CPSingleType
+    : IDENT
+    | VOIDTOKEN
     ;
 
 CPMethodSelectorList
@@ -969,7 +981,20 @@ CPMethodSelectorList
     ;
 
 CPMethodSelector
-    : IDENT ':' '(' IDENT ')' IDENT
+    : IDENT ':' '(' CPType ')' IDENT
       {{ $$ = yy.Node('CPSelector', {type:$4}, yy.IdPatt($1), yy.IdPatt($6)); }}
     ;
 
+CPSelectorExpr
+    : CPSELECTOR '(' CPSelectorName ')'
+      {{ $$ = yy.Node('CPSelectorExpr', {name:$3}); }}
+    | CPSELECTOR '(' IDENT ')'
+      {{ $$ = yy.Node('CPSelectorExpr', {name:$3}); }}
+    ;
+
+CPSelectorName
+    : IDENT ':'
+      {{ $$ = $1 + ':'; }}
+    | CPSelectorName IDENT ':'
+      {{ $$ = $1 + $2 + ':'; }}
+    ;

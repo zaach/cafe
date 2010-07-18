@@ -13,6 +13,22 @@ exports["test CPString"] = function () {
     assert.deepEqual(program, nodes);
 };
 
+exports["test selector"] = function () {
+    var source = '@selector(foo)',
+        program = parse(source),
+        nodes = Node('Program',{},
+                  Node('CPSelectorExpr',{name: 'foo'}));
+    assert.deepEqual(program, nodes);
+};
+
+exports["test complex selector"] = function () {
+    var source = '@selector(foo:bar:)',
+        program = parse(source),
+        nodes = Node('Program',{},
+                  Node('CPSelectorExpr',{name: 'foo:bar:'}));
+    assert.deepEqual(program, nodes);
+};
+
 exports["test super message send"] = function () {
     var source = '[super init];',
         program = parse(source),
@@ -29,6 +45,16 @@ exports["test simple message send"] = function () {
                   Node('CPMessageSendExpr',{},
                     Node('IdExpr',{name:'foo'}),
                     IdPatt('init')));
+    assert.deepEqual(program, nodes);
+};
+
+exports["test message send class"] = function () {
+    var source = '[foo class];',
+        program = parse(source),
+        nodes = Node('Program',{},
+                  Node('CPMessageSendExpr',{},
+                    Node('IdExpr',{name:'foo'}),
+                    IdPatt('class')));
     assert.deepEqual(program, nodes);
 };
 
