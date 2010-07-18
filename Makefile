@@ -1,12 +1,12 @@
 all: build test
 
-build: build-js build-obbj
-test: test-js test-objj
+build: build-js build-objj build-harmony
+test: test-js test-objj test-harmony
 
 build-js:
 	jison lib/js/grammar.jiy lib/js/lexer.jil
 	mv grammar.js lib/js/parser.js
-build-obbj:
+build-objj:
 	jison lib/objj/grammar.jiy lib/objj/lexer.jil
 	mv grammar.js lib/objj/parser.js
 build-harmony:
