@@ -131,3 +131,14 @@ exports["test return unneeded ASI with comment"] = function () {
                       Node('LiteralExpr',{type:'number',value:5})))));
     assert.deepEqual(program, nodes);
 };
+
+exports["test space between breaks"] = function () {
+    var source = 'do {} while(true)\n  \n3;',
+        program = parse(source),
+        nodes = Node('Program',{},
+                  Node('DoWhileStmt',{},
+                    Node('BlockStmt',{}),
+                    Node('LiteralExpr',{type:'boolean',value:true})),
+                    Node('LiteralExpr',{type:'number',value:3}));
+    assert.deepEqual(program, nodes);
+};

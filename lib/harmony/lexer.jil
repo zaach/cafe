@@ -9,8 +9,8 @@ RCLASS "["({BSL}|[^\\[])*"]"
 %%
 
 ";"\s+/("++"|"--")    {return ';'}
-\n+/("++"|"--")    {return ';'}
-\n+    %{ if(yy.ASI){ yy.ASI=false; return ';';} else yy.lineBreak = true; %}
+\n(\s|\n)*/("++"|"--")    {return ';'}
+\n(\s|\n)*    %{ if(yy.ASI){ yy.ASI=false; return ';';} else yy.lineBreak = true; %}
 \s+    {yy.ASI=false; /* skip whitespace */}
 "//".*    {/* skip comment */}
 "#".*    {/* skip comment */}

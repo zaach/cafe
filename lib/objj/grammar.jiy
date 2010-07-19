@@ -5,6 +5,11 @@
 
 %%
 
+IdentifierName
+    : IDENT
+    | WITH
+    ;
+
 Literal
     : NULLTOKEN
       {{ $$ = yy.Node('LiteralExpr', {type: 'null', value: null}); }}
@@ -981,20 +986,20 @@ CPMethodSelectorList
     ;
 
 CPMethodSelector
-    : IDENT ':' '(' CPType ')' IDENT
+    : IdentifierName ':' '(' CPType ')' IDENT
       {{ $$ = yy.Node('CPSelector', {type:$4}, yy.IdPatt($1), yy.IdPatt($6)); }}
     ;
 
 CPSelectorExpr
     : CPSELECTOR '(' CPSelectorName ')'
       {{ $$ = yy.Node('CPSelectorExpr', {name:$3}); }}
-    | CPSELECTOR '(' IDENT ')'
+    | CPSELECTOR '(' IdentifierName ')'
       {{ $$ = yy.Node('CPSelectorExpr', {name:$3}); }}
     ;
 
 CPSelectorName
-    : IDENT ':'
+    : IdentifierName ':'
       {{ $$ = $1 + ':'; }}
-    | CPSelectorName IDENT ':'
+    | CPSelectorName IdentifierName ':'
       {{ $$ = $1 + $2 + ':'; }}
     ;
