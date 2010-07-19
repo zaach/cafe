@@ -885,6 +885,7 @@ CPArgumentList
 Statement
     : CPClassStatement
     | CPImportStatement
+    | CPCategoryStatement
     ;
 
 CPImportStatement
@@ -899,6 +900,14 @@ CPClassStatement
       {{ $$ = yy.Node('CPClassImplementationStmt',{name: $2},$3);
          $$.append($4[0]);
          $$.appendList($4[1]);
+       }}
+    ;
+
+CPCategoryStatement
+    : CPIMPLEMENTATION IDENT '(' IDENT ')' CPImplDefinitionList CPEND
+      {{ $$ = yy.Node('CPCategoryImplementationStmt',{name: $2},yy.IdPatt($4));
+         $$.append($6[0]);
+         $$.appendList($6[1]);
        }}
     ;
 

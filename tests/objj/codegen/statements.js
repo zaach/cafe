@@ -19,6 +19,14 @@ exports["test class implementation"] = function () {
     assert.deepEqual(parse(jssource), parse(toJS(program)));
 };
 
+exports["test category implementation"] = function () {
+    var source = '@implementation Person (Object) @end',
+        jssource = '{var $objj_className = "Person", the_class = objj_getClass("Person"), meta_class = the_class.isa;objj_registerClassPair(the_class); }',
+        program = parse(source);
+        
+    assert.deepEqual(parse(jssource), parse(toJS(program)));
+};
+
 exports["test class implementation with empty vars"] = function () {
     var source = '@implementation Person { } @end',
         jssource = '{var $objj_className = "Person", the_class = objj_allocateClassPair(Nil, $objj_className), meta_class = the_class.isa;objj_registerClassPair(the_class); }',

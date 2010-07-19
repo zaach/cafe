@@ -43,6 +43,16 @@ exports["test class implementation with superclass"] = function () {
     assert.deepEqual(program, nodes);
 };
 
+exports["test category implementation"] = function () {
+    var source = '@implementation Person (CPObject) { } @end',
+        program = parse(source),
+        nodes = Node('Program',{},
+                  Node('CPCategoryImplementationStmt',{name:'Person'},
+                    IdPatt('CPObject'),
+                    Node('CPInstanceVars',{})));
+    assert.deepEqual(program, nodes);
+};
+
 exports["test class implementation with superclass and vars"] = function () {
     var source = '@implementation Person : CPObject { CPString name; CPString foo; } @end',
         program = parse(source),
