@@ -393,6 +393,16 @@ exports["test member property"] = function () {
     assert.deepEqual(program, nodes);
 };
 
+exports["test member reserved word property"] = function () {
+    var source = 'foo.delete;',
+        program = parse(source),
+        nodes = Node('Program',{},
+                  Node('MemberExpr',{brackets: false},
+                    Node('IdExpr',{name:'foo'}),
+                    Node('LiteralExpr',{type:'string',value:'delete'})));
+    assert.deepEqual(program, nodes);
+};
+
 exports["test member property bracket access"] = function () {
     var source = 'foo[false];',
         program = parse(source),
@@ -449,6 +459,17 @@ exports["test call member"] = function () {
     assert.deepEqual(program, nodes);
 };
 
+exports["test call reserved word member"] = function () {
+    var source = 'foo().void;',
+        program = parse(source),
+        nodes = Node('Program',{},
+                  Node('MemberExpr',{brackets: false},
+                    Node('CallExpr',{},
+                      Node('IdExpr',{name:'foo'})),
+                    Node('LiteralExpr',{type:'string',value:'void'})));
+    assert.deepEqual(program, nodes);
+};
+
 exports["test call member with brackets"] = function () {
     var source = 'foo()[true];',
         program = parse(source),
@@ -467,6 +488,18 @@ exports["test invoke"] = function () {
                   Node('InvokeExpr',{brackets:false},
                     Node('IdExpr',{name:'foo'}),
                     Node('LiteralExpr',{type:'string',value:'bar'}),
+                    Node('IdExpr',{name:'b'}),
+                    Node('IdExpr',{name:'c'})));
+    assert.deepEqual(program, nodes);
+};
+
+exports["test invoke reserved word"] = function () {
+    var source = 'foo.with(b,c);',
+        program = parse(source),
+        nodes = Node('Program',{},
+                  Node('InvokeExpr',{brackets:false},
+                    Node('IdExpr',{name:'foo'}),
+                    Node('LiteralExpr',{type:'string',value:'with'}),
                     Node('IdExpr',{name:'b'}),
                     Node('IdExpr',{name:'c'})));
     assert.deepEqual(program, nodes);

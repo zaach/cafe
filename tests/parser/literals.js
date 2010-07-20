@@ -117,12 +117,37 @@ exports["test object literal with properties"] = function () {
     assert.deepEqual(program, nodes);
 };
 
+exports["test object literal with reserved word properties"] = function () {
+    var source = '({delete:1, throw:2, if:3});',
+        program = parse(source),
+        nodes = Node('Program',{},
+                    Node('ObjectExpr',{parens:true},
+                      Node('DataProp', {name:'delete'},
+                        Node('LiteralExpr',{type:'number',value:1})),
+                      Node('DataProp', {name:'throw'},
+                        Node('LiteralExpr',{type:'number',value:2})),
+                      Node('DataProp', {name:'if'},
+                        Node('LiteralExpr',{type:'number',value:3}))));
+    assert.deepEqual(program, nodes);
+};
+
 exports["test object literal with getter"] = function () {
     var source = '({get foo(){1;}});',
         program = parse(source),
         nodes = Node('Program',{},
                     Node('ObjectExpr',{parens:true},
                       Node('GetterSetterProp', {name:'foo', op:'get'},
+                        Node('ParamDecl', {}),
+                        Node('LiteralExpr',{type:'number',value:1}))));
+    assert.deepEqual(program, nodes);
+};
+
+exports["test object literal with reserved word getter"] = function () {
+    var source = '({get throw(){1;}});',
+        program = parse(source),
+        nodes = Node('Program',{},
+                    Node('ObjectExpr',{parens:true},
+                      Node('GetterSetterProp', {name:'throw', op:'get'},
                         Node('ParamDecl', {}),
                         Node('LiteralExpr',{type:'number',value:1}))));
     assert.deepEqual(program, nodes);
