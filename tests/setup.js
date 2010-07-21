@@ -7,6 +7,7 @@ if (typeof objj !== 'undefined') { //hacky
     C = require("../lib/js").Compiler;
 }
 var compiler = new C;
+exports.compiler = compiler;
 exports.parser = compiler.parser;
 exports.parse = function (s) {return exports.parser.parse(s);};
 exports.toJS = compiler.toJS;
